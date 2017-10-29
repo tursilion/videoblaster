@@ -1,15 +1,13 @@
 This depot is not guaranteed to build at any given time - it's my bleeding edge repository.
 
-videopack
-==========
+videoblaster
+============
 
-![Screenshot](https://github.com/tursilion/videopack/raw/master/dist/noimage.jpg)
-
-Quick and dirty tool to remap audio to the TI's sound chip. Uses a non-mathematical approach.
+Video playback routines for the TI-99/4A. This is a folder of very rough and experimental code.
 
 This is meant to be a part of the [TIVidConvert](https://github.com/tursilion/tividconvert) package.
 
-Download the latest release zip here: [https://github.com/tursilion/videopack/raw/master/dist/videopack.zip](https://github.com/tursilion/videopack/raw/master/dist/videopack.zip)
+There's no zip to download here, it's just code.
 
 Want to donate?
 ---------------
