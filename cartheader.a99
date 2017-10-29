@@ -1,0 +1,16 @@
+* simple cart header for all non-boot banks to switch
+* to bank >6000. All the banks are built to start that
+* way, and bank 6000 has the rest of the real code.
+
+	AORG >6000
+
+* cart header
+		DATA >AA01,>0200,>0000,PROG1,>0000,>0000
+PROG1	DATA >0000,MAIN,>0A54
+		TEXT 'URSI TEST'
+		EVEN
+
+MAIN	MOV R0,@>6000
+
+		END
+		

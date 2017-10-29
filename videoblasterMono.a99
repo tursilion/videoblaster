@@ -1,0 +1,315 @@
+* Double frame-rate mono video!
+*
+* Need to get DSP back in Classic99 to hear if the audio is
+* working or not. Then some kind of system for hardware to
+* try it... maybe just a smaller ROM-based test for Jim's
+* 2MB ROM - can lose a tiny bit to bank switching.
+* Could store 1 frame on each page (7600 bytes or so), and there
+* would be 256 pages available, which is about 28 seconds!
+
+* Full screen:	
+* 8-bit - Classic99 says 670118 cycles per screen, which is about
+* 4.476823 fps and 13752.8018Hz audio
+*
+* 16-bit- 584050 cycles, which is about 
+* 5.13655 fps and 15779.47094Hz audio
+*
+* Not as large a difference as I expected! Most of the time is in
+* the 8-bit wait states to hardware, and not much to be done there.
+
+* So, might as well stick to 8-bit code (only about 0.6fps difference)
+* Trying again with 50% resolution (24x16 - we assume it's centered,
+* so, 4 rows in the top segment, 8 rows in the middle, 4 rows in the
+* bottom. We still start each segment at 0.)
+
+* Half Screen:
+* 8-bit - 336142 cycles, which is about
+* 8.924799 fps and 12030.6299 Hz
+*
+* Final Version:
+* Interleaved 8-bit code:
+* 8-bit - 336578 cycles per frame
+* Each frame has 6144 bytes of video, and 1544 bytes of audio.
+* approximate output is: 
+* 8.9132 fps and 13762.04 Hz
+
+	DEF MAIN
+
+source equ >7FFF	* fake hardware for the moment
+*					* should reset when >6000 is read
+MAIN
+	LIMI 0
+	LWPI >8300
+	
+*	* set up sound chip
+	LI R0,>9FBF		* mute all channels
+	MOVB R0,@SOUND
+	SWPB R0
+	MOVB R0,@SOUND
+	LI R0,>DFFF
+	MOVB R0,@SOUND
+	SWPB R0
+	MOVB R0,@SOUND
+	LI R0,>8100		* highest frequency
+	MOVB R0,@SOUND
+	SWPB R0
+	MOVB R0,@SOUND
+	
+*	* set up bitmap
+	BL @BITMAP
+	
+* init the color table at >2000 to be
+* all black on white
+	LI R0,>6000
+	BL @VDPWTA
+	LI R0,>1800
+	LI R1,>1F00
+IBWLP
+	MOVB R1,@VDPWD
+	DEC R0
+	JNE IBWLP
+	
+*	* set up copy
+
+* We /could/ get away with 3 blocks, and I did that originally.
+* The idea of using four is to interleave the painting more so
+* pattern updates are more closely followed by color udpates.
+* it causes more obvious paints, but this looks better than the flicker.
+	li r2,>0040		* start address table 1 >0000
+	li r3,>0048		* start address table 2 >0800
+	li r4,>004B		* start address table 5 >0B00
+	li r5,>0050		* start address table 6 >1000
+	li r6,>0060		* start address table 3 >2000
+	li r7,>0068		* start address table 4 >2800
+	li r8,>006B		* start address table 7 >2B00
+	li r9,>0070		* start address table 8 >3000
+	li r10,192		* size of one table divided by 4 (24*4*8/4)
+	li r12,VDPWA
+	LI r13,VDPWD
+	li r14,source
+	li r15,SOUND
+
+* Color table loops are just deleted below...
+	
+*
+* try to keep the cycles between sound writes about even
+* the setup blocks need to be 2 cycles longer than the copy blocks
+* to make up for the JNE fallthrough being 2 cycles shorter.
+*
+* Although the smaller code needs fewer bytes to VDP, to keep the
+* code reasonably tight, we now need SIX copy loops.
+* 
+* The data pattern needs to be (P=PATTERN, C=COLOR, S=Sound):
+* 1		S
+* 192	PPPPS	first 1/3rd, chars 0-95
+* 1		S
+* 192	CCCCS
+* 1		S
+* 192	PPPPS	second 1/3rd, chars 0-95
+* 1		S
+* 192	CCCCS
+* 1		S
+* 192	PPPPS	second 1/3rd, chars 96-191
+* 1		S
+* 192	CCCCS
+* 1		S
+* 192	PPPPS	third 1/3rd, chars 0-95
+* 1		S
+* 192	CCCCS
+*
+* Repeat - above sequence is first pattern data, then color data (color at >2000)
+* We are interleaving the pattern and color through each table
+*
+*                                                  8Bit	16bit 
+OUTLOOP
+
+* Pattern 1
+	MOVB R2,*R12									30	26
+	SWPB R2											14	10
+	MOVB R2,*R12	* VDP address set				30	26
+	SWPB R2											14	10
+	SRL R0,8		* waste time					32	28
+	SRL R0,7										30	26
+	MOV R10,R0		* bytes to write divided by 4	18	14
+	MOVB *R14,*R15	* write sound					38	34
+*												   220 192
+LOOP1
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R15	* write sound					38	34
+	DEC R0											14	10
+	JNE LOOP1										14	10
+*												   218 190
+
+* Pattern 2
+	MOVB R3,*R12									30	26
+	SWPB R3											14	10
+	MOVB R3,*R12	* VDP address set				30	26
+	SWPB R3											14	10
+	NOP												14	10
+	SRL R0,8		* waste time					32	28
+	SRL R0,7										30	26
+	MOV R10,R0		* bytes to write divided by 4	18	14
+	MOVB *R14,*R15	* write sound					38	34
+*												   220 192
+	
+LOOP2
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R15	* write sound					38	34
+	DEC R0											14	10
+	JNE LOOP2										14	10
+*												   218 190
+
+* Pattern 2b
+	MOVB R4,*R12									30	26
+	SWPB R4											14	10
+	MOVB R4,*R12	* VDP address set				30	26
+	SWPB R4											14	10
+	NOP												14	10
+	SRL R0,8		* waste time					32	28
+	SRL R0,7										30	26
+	MOV R10,R0		* bytes to write divided by 4	18	14
+	MOVB *R14,*R15	* write sound					38	34
+*												   220 192
+	
+LOOP2b
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R15	* write sound					38	34
+	DEC R0											14	10
+	JNE LOOP2b										14	10
+*												   218 190
+
+* Pattern 3
+	MOVB R5,*R12									30	26
+	SWPB R5											14	10
+	MOVB R5,*R12	* VDP address set				30	26
+	SWPB R5											14	10
+	NOP												14	10
+	SRL R0,8		* waste time					32	28
+	SRL R0,7										30	26
+	MOV R10,R0		* bytes to write divided by 4	18	14
+	MOVB *R14,*R15	* write sound					38	34
+*												   220 192
+	
+LOOP3
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R13	* data							38	34
+	MOVB *R14,*R15	* write sound					38	34
+	DEC R0											14	10
+	JNE LOOP3										14	10
+*												   218 190
+	JMP OUTLOOP										14	10
+
+FINAL
+	
+	
+* Setup for normal bitmap mode
+* returns with video off - set VDP R1 to E2 to enable (>81E2)
+SAVE BSS 2
+BITMAP
+	MOV R11,@SAVE
+
+* set display and disable sprites
+	LI R1,BMREGS
+	BL @LOADRG
+	
+* set up SIT - We first fill with 255 bytes
+	LI R0,>5800
+	BL @VDPWTA
+	LI R0,768
+	LI R1,>FF00
+LP# 
+	MOVB R1,@>8C00
+	DEC R0
+	JNE LP#
+	
+* Now special setup for each table - we have 16 rows
+* of 24 chars each. 
+* First table is 4 rows and so starts at row 4
+* Indent is 4 chars on each side, so start at 4
+	LI R0,>5884	* address
+	CLR R1		* char to write
+	LI R2,4		* rows left
+	BL @WRITEBK
+	
+* Second table is 8 rows and starts at row 8
+	LI R0,>5904	* address
+	CLR R1		* char to write
+	LI R2,8		* rows left
+	BL @WRITEBK
+	
+* third table is 4 rows and starts at row 16
+	LI R0,>5A04	* address
+	CLR R1		* char to write
+	LI R2,4		* rows left
+	BL @WRITEBK
+	
+	MOV @SAVE,R11
+	B *R11
+
+SAVE2 BSS 2
+
+WRITEBK
+	MOV R11,@SAVE2
+LPA1	
+	BL @VDPWTA	* set address
+	LI R3,24	* chars left
+LPA2
+	MOVB R1,@>8C00
+	AI R1,>0100	* next char
+	DEC R3
+	JNE LPA2	* column loop
+	
+	AI R0,32	* next row
+	DEC R2
+	JNE LPA1	* row loop
+	
+	MOV @SAVE2,R11
+	B *R11
+
+* registers for bitmap (and 5B00 is the address of the sprite table)
+* background is transparent (the only color never redefined)
+* PDT - >0000
+* SIT - >1800
+* SDT - >1800
+* CT  - >2000
+* SAL - >1B00
+BMREGS DATA >81E0,>8002,>8206,>83ff,>8403,>8536,>8603,>8700,>5B00,>0000
+
+* load regs list to VDP address, end on >0000 and write >D0 (for sprites)
+* address of table in R1 (destroyed)
+LOADRG
+LOADLP
+	MOV *R1+,R0
+	JEQ LDRDN
+	SWPB R0
+	MOVB R0,@>8C02
+	SWPB R0
+	MOVB R0,@>8C02
+	JMP LOADLP
+LDRDN
+	LI R1,>D000
+	MOVB R1,@>8C00
+	B *R11
+
+* Write address or register
+VDPWTA
+	SWPB R0
+	MOVB R0,@>8C02
+	SWPB R0
+	MOVB R0,@>8C02
+	B *R11  
+
+
+	END
+	
