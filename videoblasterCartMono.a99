@@ -143,8 +143,11 @@ LOOP4EVR
     B @>8320
     
 * absolute return point, so we don't need to save R11
+* When we get here, JOYDAT has the newly detected joystick data
+* JOYOLD has the joystick data ('1' is active)
 * if R7 is >FFFF, then the video has played out
 ABSRET
+	BL @HANDLEJOY
 	JMP LOOP4EVR
 
 * following code is copied to >8320 and run from scratchpad
@@ -384,6 +387,122 @@ RBLP1
 	DECT R1
 	JNE RBLP1
 	BLWP @>0000
+	
+* quick little joystick handlers for the video playback code, conveniently
+* lets me test the callbacks for Dragon's Lair
+HANDLEJOY
+* so we either played out the video (R7 = FFFF), in which case we just return,
+* or we are going to process the joystick, fast-forward or rewind or pause,
+* then return right back to >8320. >8320 resets the cart page, so we don't
+* need to worry about being in the middle of a page.
+
+* joystick bits:
+* 10 = up
+* 08 = down
+* 02 = left
+* 04 = right
+* 01 = fire
+
+	INC R7		* lazy test for -1
+	JNE MUSTBEJOY
+	B *R11
+	
+MUSTBEJOY
+	DEC R7		* just to keep it clean
+
+*******************
+	LI R0,>0200
+	COC R0,JOYDAT
+	JNE NOLEFT
+	
+* Left, rewind 10 frames - don't rewind past zero
+	AI R7,10
+	AI R8,-20		* pages are multiplied by 2
+	CI R8,>6002
+	JHE BACK2SCR	* didn't wrap, go back to work
+	
+	MOV R9,R9
+	JEQ R9CLAMP		* jump if we're already at zero
+	
+    AI R9,->0100
+	LI R8,>7FFC
+	JMP BACK2SCR	* did last bank, back to work
+	
+R9CLAMP
+	MOV @FRAMES,R7	* reset frame count
+	LI R8,>6002		* we were at zero, so clamp it
+	JMP BACK2SCR
+
+*******************
+	
+NOLEFT
+	LI R0,>0400
+	COC R0,JOYDAT
+	JNE NORIGHT
+	
+* right, advance 10 frames - don't advance past the end
+	CI R7,11
+	JL BACK2SCR
+
+	AI R7,-10
+	AI R8,20
+	CI R8,>8000
+	JL BACK2SCR	* didn't wrap, go back to work
+	
+    AI R9,>0100                                     ...10 - increment data
+	LI R8,>6002
+	JMP BACK2SCR	* did last bank, back to work
+
+*******************
+	
+NORIGHT
+	LI R0,>0100
+	COC R0,JOYDAT
+	JNE NOFIRE
+
+* just pause, then... we'll sit here until fire is pressed again
+PAUSELP
+* check for quit	
+	SBZ 16
+	SBZ 17											12 - set QUIT column - 48 cycles (8 cycles over)
+
+* delay
+    SRL R0,2
+
+* read the FCTN and EQUALS keys
+	TB 0											12 (equals)
+	JEQ KEYOKPS
+	TB 4											...12 (fctn)
+	JEQ KEYOKPS
+	B @REBOOT
+KEYOKPS
+	
+* prepare joystick read
+	SBO 16
+	SBO 17                                          12 - select column 6
+* delay
+    SRL R0,2
+    
+* read the joystick lines
+	STCR JOYDAT,8
+
+* check joystick results
+	mov JOYDAT,r2	                                14 - make a copy to work on
+	inv JOYDAT		                                10 - invert the bits - 38 cycles (2 short)
+
+	xor JOYOLD,JOYDAT                               14 - xor with old to get changed
+	szc r2,JOYDAT	                                14 - and to get only newly active bits (ignore released)
+	inv r2			                                10 - prepare to save off new 'old' - 38 cycles (2 short)
+
+	mov r2,JOYOLD	                                14
+	ci JOYDAT,>0100									Fire?
+	jne PAUSELP
+
+*******************
+	
+NOFIRE
+BACK2SCR
+	B @>8320
 	
     END
     
