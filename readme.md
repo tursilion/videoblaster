@@ -1,17 +1,8 @@
-This depot is not guaranteed to build at any given time - it's my bleeding edge repository.
-
-videoblaster
-============
+20181108
 
 Video playback routines for the TI-99/4A. This is a folder of very rough and experimental code.
 
 This is meant to be a part of the [TIVidConvert](https://github.com/tursilion/tividconvert) package.
 
 There's no zip to download here, it's just code.
-
-Want to donate?
----------------
-
-- Click here for [Ko-Fi](https://ko-fi.com/tursilion)...
-- Alternately, there's my [Amazon Wishlist](http://www.amazon.com/gp/registry/2AFCOAM5DD1L6/ref=cm_aya_wl/103-5991996-6483001)
 
