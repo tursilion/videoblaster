@@ -2,8 +2,9 @@
 * AV Playback code MONO version - by m.brent aka Tursi
 * F18A not needed for mono video
 *
-* 2022-07-20 - based on last version of color - joystick code removed
+* 2022-07-20 - based on last version of color
 * Updated 11/4/2018 - now has more correct timing
+* joystick support for fast forward/reverse
 *
 * Final Version:	
 * Fixed for: sound chip timing
@@ -25,11 +26,26 @@ SAVE EQU >83FC
 SAVE2 EQU >83FE
 FRAMES EQU >600A
 
+* register equates (all bits are active high)
+* the newly read bits from the joystick (set for one frame)
+JOYDAT EQU 4
+* the last read bits from the joystick (continuous)
+JOYOLD EQU 5
+* a mask of bits that should immediately exit the scene
+JOYMASK EQU 6
+
+* joystick bits:
+* 10 = up
+* 08 = down
+* 02 = left
+* 04 = right
+* 01 = fire
+
     AORG >6000
 
 * WARNING: if you change the scratchpad code, update this address
 * in the code it is LOOP1X
-LOOP1   EQU >837C   
+LOOP1   EQU >83BC   
     
 * cart header - >600A receives the bank to loop at
 * Note: for gigacart can use GROM startup instead...
@@ -90,11 +106,11 @@ LOOP4EVR
 
 *	R0 is reserved for scratch
 *	R1 is reserved for scratch
-*	R2 is free
-*   R3 is free
-*   R4 is free
-*   R5 is free
-*   R6 is free
+*	R2 is used for joystick calculations
+*   R3 is used (on F18A side only) to hold the VDP address
+    CLR R4			* R4 is reserved for JOYDAT
+    CLR R5			* R5 is reserved for JOYOLD
+    LI R6,>0700		* R6 is reserved for JOYMASK (left,right,fire)
 	MOV @FRAMES,r7
     li r8,>6002     * address for paging
     clr r9          * data for paging
@@ -120,6 +136,7 @@ LOOP4EVR
 * 192   PPPPS   second 1/3rd, chars 96-191
 * 1     S
 * 192   PPPPS   third 1/3rd, chars 0-95
+* (then second frame in the same page)
 *
 
 * So go to 'er!
@@ -176,11 +193,51 @@ KEYOK
 * Pattern 2b
     LI R0,>004B     * start address table 5 >0B00   12
     BL @LOOP1                                       20
+    
+* prepare joystick read
+	SBO 16                                          12
+	SBO 17                                          12 - select column 6
+* delay
+    SRL R0,2                                        16 - 40 cycles
 
-* used to be joystick code
-	mov r2,r2		                                14 - waste time
-	mov r2,r2		                               	14 - waste time
-	inv r2			                                10 - waste time
+* Pattern 3
+    LI R0,>0050     * start address table 6 >1000   12
+    BL @LOOP1                                       20
+
+* read the joystick lines
+	STCR JOYDAT,8								    44 - 44 cycles (4 over)
+
+* Pattern 1 
+    LI R0,>0040     * start address table 1 >0000   12
+    BL @LOOP1                                       20
+
+* check joystick results
+	mov JOYDAT,r2	                                14 - make a copy to work on
+	mov JOYDAT,r2	                               	14 - waste time
+	inv JOYDAT		                                10 - invert the bits - 38 cycles (2 short)
+
+* Pattern 2
+    LI R0,>0048     * start address table 2 >0800   12
+    BL @LOOP1                                       20
+
+* continue processing joystick data
+	xor JOYOLD,JOYDAT                               14 - xor with old to get changed
+	szc r2,JOYDAT	                                14 - and to get only newly active bits (ignore released)
+	inv r2			                                10 - prepare to save off new 'old' - 38 cycles (2 short)
+
+* Pattern 2b
+    LI R0,>004B     * start address table 5 >0B00   12
+    BL @LOOP1                                       20
+
+* finish processing the joystick, including early exit check
+	mov r2,JOYOLD	                                14
+	andi JOYOLD,>0100								REMOVE ME - make only fire edge-triggered (changes LOOP1X by 4)
+	czc JOYMASK,JOYDAT                              14
+	jeq JOYOK		                                10 - normal case, we do not exit!
+	CLR @>6000                                      ...26 (reset cartridge bank for code jump)
+	B @ABSRET                                       ...16 (joystick told us to exit)
+JOYOK
+*                                                      - 38 cycles (2 short)
 
 * Pattern 3
     LI R0,>0050     * start address table 6 >1000   12
